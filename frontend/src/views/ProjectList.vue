@@ -17,7 +17,10 @@
           />
           <span v-if="searchText" class="search-clear" @click="clearSearch">×</span>
         </div>
-        <button class="search-btn" @click="loadProjects">搜索</button>
+        <button class="search-btn" v-ripple :class="{ 'is-loading': searchLoading }" @click="loadProjects">
+          <span v-if="searchLoading" class="btn-spinner"></span>
+          <span v-else>搜索</span>
+        </button>
       </div>
       <div class="filter-row">
         <el-select v-model="filterHardware" placeholder="硬件版型" clearable multiple collapse-tags class="filter-select" size="small" @change="loadProjects">
@@ -30,7 +33,7 @@
           <el-option label="2.4G" value="2.4G" />
           <el-option label="5G" value="5G" />
         </el-select>
-        <button class="reset-btn" @click="resetFilters">
+        <button class="reset-btn" v-ripple @click="resetFilters">
           <el-icon class="reset-icon"><RefreshLeft /></el-icon>
           <span>重置</span>
         </button>
@@ -42,8 +45,9 @@
         <div
           v-for="(c, idx) in customers"
           :key="c.id"
-          class="customer-card"
+          class="customer-card scroll-reveal"
           :class="{ active: currentCustomerId === c.id }"
+          :style="{ '--reveal-delay': idx * 60 + 'ms' }"
           @click="selectCustomer(c.id)"
           @contextmenu.prevent="showContextMenu($event, c)"
         >
@@ -64,7 +68,7 @@
             <span class="card-number">{{ c.project_count }}</span>
           </div>
         </div>
-        <div class="customer-card card-add" @click="handleAddCustomer">
+        <div class="customer-card card-add scroll-reveal" :style="{ '--reveal-delay': customers.length * 60 + 'ms' }" @click="handleAddCustomer">
           <div class="card-icon card-icon-add">
             <el-icon :size="20"><Plus /></el-icon>
           </div>
@@ -76,18 +80,20 @@
       </div>
     </div>
 
-    <div class="table-section">
-      <div class="table-toolbar">
-        <span class="table-customer-label">{{ currentCustomerName || '全部项目' }}</span>
-        <div class="table-actions">
-          <el-button v-if="currentCustomerId" type="primary" :icon="Plus" size="small" @click="handleAddProject">新建项目</el-button>
-          <el-button :icon="Download" size="small" @click="handleExport">导出 Excel</el-button>
-          <el-button :icon="Setting" size="small" @click="showColumnSettings = true">展示设置</el-button>
+    <Transition name="fade-slide" mode="out-in">
+      <div class="table-section" :key="currentCustomerId || 'all'">
+        <div class="table-toolbar">
+          <span class="table-customer-label">{{ currentCustomerName || '全部项目' }}</span>
+          <div class="table-actions">
+            <el-button v-if="currentCustomerId" type="primary" :icon="Plus" size="small" v-ripple @click="handleAddProject">新建项目</el-button>
+            <el-button v-if="currentCustomerId" :icon="Upload" size="small" v-ripple @click="handleImportClick">导入 Excel</el-button>
+            <el-button :icon="Download" size="small" v-ripple @click="handleExport">导出 Excel</el-button>
+            <el-button :icon="Setting" size="small" v-ripple @click="showColumnSettings = true">展示设置</el-button>
+          </div>
         </div>
-      </div>
 
-      <div class="table-card">
-        <el-table
+        <div class="table-card scroll-reveal">
+          <el-table
           :data="pagedData"
           border
           style="width: 100%"
@@ -96,29 +102,6 @@
           :header-cell-style="{ background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: '13px' }"
           :cell-style="{ fontSize: '13px', color: '#334155' }"
         >
-          <el-table-column type="expand">
-            <template #default="{ row }">
-              <div class="expand-content">
-                <el-descriptions :column="3" border size="small">
-                  <el-descriptions-item label="客户">{{ row.customer_name || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="Launcher">{{ row.launcher || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="PIR">
-                    <el-tag :type="row.pir ? 'success' : 'info'" size="small" effect="plain">{{ row.pir ? '有' : '无' }}</el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="LED">
-                    <el-tag :type="row.led ? 'success' : 'info'" size="small" effect="plain">{{ row.led ? '有' : '无' }}</el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="光感">{{ row.light_sensor }}</el-descriptions-item>
-                  <el-descriptions-item label="WiFi">{{ row.wifi }}</el-descriptions-item>
-                  <el-descriptions-item label="屏幕尺寸">{{ row.screen_size || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="屏幕型号">{{ row.screen_model || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="TP">{{ row.tp || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="壳">{{ row.shell || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="备注" :span="3">{{ row.remarks || '-' }}</el-descriptions-item>
-                </el-descriptions>
-              </div>
-            </template>
-          </el-table-column>
           <el-table-column v-if="visibleColumns.serial_number" prop="serial_number" label="序号" width="70" align="center" />
           <el-table-column v-if="!currentCustomerId && visibleColumns.customer_name" prop="customer_name" label="客户" width="100" align="center" show-overflow-tooltip />
           <el-table-column v-if="visibleColumns.project_name" prop="project_name" label="项目名称" min-width="120" align="center" show-overflow-tooltip />
@@ -168,6 +151,7 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <ProjectForm
       v-if="showForm"
@@ -193,7 +177,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showAddCustomerDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmAddCustomer">确定</el-button>
+        <el-button type="primary" :loading="addCustomerLoading" @click="confirmAddCustomer">确定</el-button>
       </template>
     </el-dialog>
 
@@ -219,6 +203,77 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="showImportDialog" title="导入 Excel" width="600px" @close="resetImportState">
+      <div class="import-body">
+        <div v-if="importStep === 1" class="import-step">
+          <el-upload
+            ref="importUploadRef"
+            drag
+            :auto-upload="false"
+            :limit="1"
+            accept=".xlsx,.xls"
+            :on-change="handleImportFileChange"
+            :on-exceed="() => ElMessage.warning('只能上传一个文件')"
+            class="import-upload"
+          >
+            <el-icon class="el-icon--upload"><Upload /></el-icon>
+            <div class="el-upload__text">将 Excel 文件拖到此处，或<em>点击上传</em></div>
+            <template #tip>
+              <div class="el-upload__tip">仅支持 .xlsx / .xls 格式</div>
+            </template>
+          </el-upload>
+        </div>
+
+        <div v-if="importStep === 2" class="import-step">
+          <div class="import-preview-info">
+            <span>共解析到 <strong>{{ importParsedData.length }}</strong> 条数据</span>
+            <span v-if="importUnmatchedHeaders.length > 0" class="import-unmatched">
+              未识别列：{{ importUnmatchedHeaders.join('、') }}
+            </span>
+          </div>
+          <div class="import-preview-table-wrapper">
+            <el-table :data="importParsedData.slice(0, 10)" border size="small" max-height="320">
+              <el-table-column v-for="col in importPreviewColumns" :key="col.key" :prop="col.key" :label="col.label" min-width="100" show-overflow-tooltip />
+            </el-table>
+            <div v-if="importParsedData.length > 10" class="import-preview-more">仅预览前 10 条，共 {{ importParsedData.length }} 条</div>
+          </div>
+        </div>
+
+        <div v-if="importStep === 3" class="import-step">
+          <div class="import-result">
+            <el-result :icon="importResult.errors.length > 0 ? 'warning' : 'success'" :title="importResultTitle">
+              <template #sub-title>
+                <div class="import-result-detail">
+                  <p>新增：<strong>{{ importResult.created }}</strong> 条</p>
+                  <p>更新：<strong>{{ importResult.updated }}</strong> 条</p>
+                  <p>跳过：<strong>{{ importResult.skipped }}</strong> 条</p>
+                  <div v-if="importResult.errors.length > 0" class="import-result-errors">
+                    <p>详细信息：</p>
+                    <ul>
+                      <li v-for="(err, i) in importResult.errors" :key="i">{{ err }}</li>
+                    </ul>
+                  </div>
+                </div>
+              </template>
+            </el-result>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <template v-if="importStep === 1">
+          <el-button @click="showImportDialog = false">取消</el-button>
+          <el-button type="primary" :disabled="!importFile" @click="parseImportFile">下一步</el-button>
+        </template>
+        <template v-if="importStep === 2">
+          <el-button @click="importStep = 1">上一步</el-button>
+          <el-button type="primary" :loading="importLoading" @click="executeImport">确认导入</el-button>
+        </template>
+        <template v-if="importStep === 3">
+          <el-button type="primary" @click="showImportDialog = false">完成</el-button>
+        </template>
+      </template>
+    </el-dialog>
+
     <div v-if="contextMenuVisible" class="context-menu" :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }">
       <div class="context-menu-item" @click="handleEditCustomerFromMenu">重命名</div>
       <div class="context-menu-item danger" @click="handleDeleteCustomer">删除</div>
@@ -229,10 +284,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, Search, Setting, Check, RefreshLeft } from '@element-plus/icons-vue'
+import { Plus, Download, Upload, Search, Setting, Check, RefreshLeft } from '@element-plus/icons-vue'
 import {
   getCustomers, createCustomer, updateCustomer, deleteCustomer,
-  getProjects, deleteProject, getProjectFilterOptions
+  getProjects, deleteProject, getProjectFilterOptions, batchImportProjects
 } from '../api/api.js'
 import ProjectForm from './ProjectForm.vue'
 import ProjectDetail from './ProjectDetail.vue'
@@ -331,6 +386,8 @@ const contextMenuVisible = ref(false)
 const contextMenuX = ref(0)
 const contextMenuY = ref(0)
 const contextMenuCustomer = ref(null)
+const searchLoading = ref(false)
+const addCustomerLoading = ref(false)
 
 const cardColors = [
   'linear-gradient(135deg, #667eea, #764ba2)',
@@ -383,6 +440,7 @@ const selectCustomer = (id) => {
 }
 
 const loadProjects = async () => {
+  searchLoading.value = true
   try {
     const params = {}
     if (currentCustomerId.value) params.customer = currentCustomerId.value
@@ -393,6 +451,8 @@ const loadProjects = async () => {
     projectList.value = await getProjects(params)
   } catch (e) {
     ElMessage.error('加载项目列表失败')
+  } finally {
+    searchLoading.value = false
   }
 }
 
@@ -424,6 +484,7 @@ const confirmAddCustomer = async () => {
     ElMessage.warning('请输入客户名称')
     return
   }
+  addCustomerLoading.value = true
   try {
     await createCustomer({ name: newCustomerName.value.trim() })
     ElMessage.success('创建成功')
@@ -432,6 +493,8 @@ const confirmAddCustomer = async () => {
     await loadCustomers()
   } catch (e) {
     ElMessage.error('创建失败')
+  } finally {
+    addCustomerLoading.value = false
   }
 }
 
@@ -573,11 +636,327 @@ const handleExport = () => {
   ElMessage.success('导出成功')
 }
 
+const FIELD_ALIAS_MAP = {
+  '项目名称': 'project_name', '项目名': 'project_name', '名称': 'project_name',
+  '硬件版型': 'hardware_version', '版型': 'hardware_version', '硬件版本': 'hardware_version',
+  'android版本': 'android_version', '安卓版本': 'android_version', 'android': 'android_version', '安卓': 'android_version',
+  '厂商': 'brand', '品牌': 'brand', '制造商': 'brand',
+  '型号': 'model', '设备型号': 'model',
+  'launcher': 'launcher', '启动器': 'launcher',
+  'pir': 'pir', '人体感应': 'pir',
+  'led': 'led', '指示灯': 'led',
+  '光感': 'light_sensor', '光线传感器': 'light_sensor', '光传感器': 'light_sensor',
+  'wifi': 'wifi', 'WiFi': 'wifi', '无线': 'wifi',
+  '屏幕尺寸': 'screen_size', '屏尺寸': 'screen_size',
+  '屏幕型号': 'screen_model', '屏型号': 'screen_model',
+  'tp': 'tp', '触摸屏': 'tp', '触控': 'tp',
+  '壳': 'shell', '外壳': 'shell', '机壳': 'shell',
+  '立项时间': 'project_establish_date', '立项日期': 'project_establish_date', '创建时间': 'project_establish_date',
+  '备注': 'remarks', '说明': 'remarks', '描述': 'remarks',
+  '序号': 'serial_number', '编号': 'serial_number',
+}
+
+const BOOLEAN_FIELDS = ['pir', 'led']
+const BOOLEAN_TRUE_VALUES = ['是', 'yes', 'true', '1', '✓', '有', 'y', 'on']
+const BOOLEAN_FALSE_VALUES = ['否', 'no', 'false', '0', '✗', '无', 'n', 'off']
+
+const CHOICE_FIELDS = {
+  light_sensor: ['ADCF3', 'STK3311', '无'],
+  wifi: ['2.4G', '5G'],
+}
+
+const DATE_FIELDS = ['project_establish_date']
+
+const normalizeHeader = (h) => {
+  return h.toString().trim().toLowerCase().replace(/[\s_\-·—]+/g, '')
+}
+
+const matchHeader = (header) => {
+  const normalized = normalizeHeader(header)
+  for (const [alias, field] of Object.entries(FIELD_ALIAS_MAP)) {
+    if (normalizeHeader(alias) === normalized) return field
+  }
+  for (const [alias, field] of Object.entries(FIELD_ALIAS_MAP)) {
+    if (normalizeHeader(alias).includes(normalized) || normalized.includes(normalizeHeader(alias))) return field
+  }
+  for (const [alias, field] of Object.entries(FIELD_ALIAS_MAP)) {
+    const aliasNorm = normalizeHeader(alias)
+    if (aliasNorm.charAt(0) === normalized.charAt(0) && aliasNorm.length <= 4) return field
+  }
+  return null
+}
+
+const convertBooleanValue = (val) => {
+  const str = String(val).trim().toLowerCase()
+  if (BOOLEAN_TRUE_VALUES.includes(str)) return true
+  if (BOOLEAN_FALSE_VALUES.includes(str)) return false
+  return null
+}
+
+const convertChoiceValue = (field, val) => {
+  const str = String(val).trim()
+  const choices = CHOICE_FIELDS[field]
+  if (!choices) return str
+  for (const c of choices) {
+    if (c.toLowerCase() === str.toLowerCase()) return c
+  }
+  return str
+}
+
+const convertDateValue = (val) => {
+  if (val === undefined || val === null) return ''
+  if (typeof val === 'number') {
+    const excelEpoch = new Date(1899, 11, 30)
+    const date = new Date(excelEpoch.getTime() + val * 86400000)
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  const str = String(val).trim()
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(str)) {
+    const parts = str.split('-')
+    return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+  }
+  if (/^\d{4}[\/\.]\d{1,2}[\/\.]\d{1,2}$/.test(str)) {
+    const parts = str.split(/[\/\.]/)
+    return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+  }
+  return str
+}
+
+const showImportDialog = ref(false)
+const importStep = ref(1)
+const importFile = ref(null)
+const importUploadRef = ref(null)
+const importParsedData = ref([])
+const importUnmatchedHeaders = ref([])
+const importPreviewColumns = ref([])
+const importLoading = ref(false)
+const importResult = ref({ created: 0, updated: 0, skipped: 0, errors: [] })
+
+const importResultTitle = computed(() => {
+  const r = importResult.value
+  if (r.created > 0 && r.skipped === 0) return '导入成功'
+  if (r.created > 0 || r.updated > 0) return '导入完成（部分跳过）'
+  if (r.skipped > 0 && r.created === 0 && r.updated === 0) return '导入完成（全部跳过）'
+  return '导入完成'
+})
+
+const handleImportClick = () => {
+  if (!currentCustomerId.value) {
+    ElMessage.warning('请先选择一个客户')
+    return
+  }
+  showImportDialog.value = true
+  importStep.value = 1
+}
+
+const resetImportState = () => {
+  importStep.value = 1
+  importFile.value = null
+  importParsedData.value = []
+  importUnmatchedHeaders.value = []
+  importPreviewColumns.value = []
+  importLoading.value = false
+  importResult.value = { created: 0, updated: 0, skipped: 0, errors: [] }
+}
+
+const handleImportFileChange = (file) => {
+  importFile.value = file.raw
+}
+
+const parseImportFile = () => {
+  if (!importFile.value) return
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result)
+      const workbook = XLSX.read(data, { type: 'array' })
+      const sheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[sheetName]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+
+      const merges = worksheet['!merges'] || []
+      for (const merge of merges) {
+        const { s, e } = merge
+        const col = s.c
+        const startRow = s.r
+        const endRow = e.r
+        if (startRow === endRow) continue
+        const fillValue = jsonData[startRow] ? jsonData[startRow][col] : undefined
+        if (fillValue === undefined || fillValue === null) continue
+        for (let r = startRow + 1; r <= endRow; r++) {
+          if (!jsonData[r]) jsonData[r] = []
+          while (jsonData[r].length <= col) jsonData[r].push(undefined)
+          jsonData[r][col] = fillValue
+        }
+      }
+
+      if (jsonData.length < 2) {
+        ElMessage.warning('Excel 文件为空或只有表头')
+        return
+      }
+
+      const headers = jsonData[0].map(h => String(h).trim())
+      const fieldMapping = {}
+      const unmatched = []
+
+      headers.forEach((header, idx) => {
+        const field = matchHeader(header)
+        if (field && !fieldMapping[field]) {
+          fieldMapping[field] = idx
+        } else if (field && fieldMapping[field] !== undefined) {
+          // 重复字段映射，跳过
+        } else {
+          unmatched.push(header)
+        }
+      })
+
+      importUnmatchedHeaders.value = unmatched
+
+      const parsedRows = []
+      for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i]
+        if (!row || row.length === 0) continue
+        const rowData = {}
+        let hasMatch = false
+        for (const [field, colIdx] of Object.entries(fieldMapping)) {
+          let val = row[colIdx]
+          if (val === undefined || val === null) continue
+          if (BOOLEAN_FIELDS.includes(field)) {
+            const boolVal = convertBooleanValue(val)
+            if (boolVal !== null) {
+              rowData[field] = boolVal
+              hasMatch = true
+            }
+          } else if (DATE_FIELDS.includes(field)) {
+            const dateVal = convertDateValue(val)
+            if (dateVal) {
+              rowData[field] = dateVal
+              hasMatch = true
+            }
+          } else if (CHOICE_FIELDS[field]) {
+            rowData[field] = convertChoiceValue(field, val)
+            hasMatch = true
+          } else {
+            rowData[field] = String(val).trim()
+            if (rowData[field]) hasMatch = true
+          }
+        }
+        if (hasMatch && rowData.project_name && rowData.project_name.trim()) {
+          parsedRows.push(rowData)
+        }
+      }
+
+      importParsedData.value = parsedRows
+
+      const previewCols = Object.keys(fieldMapping).map(f => ({
+        key: f,
+        label: allColumns.find(c => c.key === f)?.label || f,
+      }))
+      importPreviewColumns.value = previewCols
+
+      if (unmatched.length > 0) {
+        ElMessage.warning(`以下列未识别：${unmatched.join('、')}`)
+      }
+
+      importStep.value = 2
+    } catch (err) {
+      console.error('解析Excel失败:', err)
+      ElMessage.error('解析 Excel 文件失败，请检查文件格式')
+    }
+  }
+  reader.readAsArrayBuffer(importFile.value)
+}
+
+const executeImport = async () => {
+  if (!currentCustomerId.value) {
+    ElMessage.error('请先选择客户')
+    return
+  }
+
+  const existingMap = {}
+  projectList.value.forEach(p => {
+    const key = `${p.project_name}|||${p.hardware_version || ''}`
+    existingMap[key] = p
+  })
+
+  const duplicates = importParsedData.value.filter(row => {
+    const key = `${row.project_name}|||${row.hardware_version || ''}`
+    return !!existingMap[key]
+  })
+
+  let overwrite = false
+  if (duplicates.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `以下项目名称和版型均已存在：${duplicates.map(d => `【${d.project_name}】`).join('、')}，是否覆盖更新？选择"否"将跳过这些记录。`,
+        '重复项目检测',
+        { confirmButtonText: '是（覆盖更新）', cancelButtonText: '否（跳过）', type: 'warning' }
+      )
+      overwrite = true
+    } catch {
+      overwrite = false
+    }
+  }
+
+  const items = importParsedData.value.map(row => {
+    const key = `${row.project_name}|||${row.hardware_version || ''}`
+    return {
+      ...row,
+      _overwrite: overwrite && !!existingMap[key],
+    }
+  })
+
+  importLoading.value = true
+  try {
+    const result = await batchImportProjects({
+      customer_id: currentCustomerId.value,
+      items,
+    })
+    importResult.value = result
+    importStep.value = 3
+    await loadProjects()
+    await loadFilterOptions()
+    await loadCustomers()
+  } catch (err) {
+    console.error('导入失败:', err)
+    ElMessage.error('导入失败，请检查数据格式')
+  } finally {
+    importLoading.value = false
+  }
+}
+
 onMounted(async () => {
   await loadCustomers()
   await loadProjects()
   await loadFilterOptions()
   document.addEventListener('click', hideContextMenu)
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('revealed')
+          observer.unobserve(entry.target)
+        }
+      })
+    },
+    { threshold: 0.1 }
+  )
+  document.querySelectorAll('.scroll-reveal').forEach((el) => {
+    observer.observe(el)
+  })
+  const revealObserver = new MutationObserver(() => {
+    document.querySelectorAll('.scroll-reveal:not(.revealed)').forEach((el) => {
+      observer.observe(el)
+    })
+  })
+  revealObserver.observe(document.querySelector('.project-page'), {
+    childList: true,
+    subtree: true,
+  })
 })
 
 onBeforeUnmount(() => {
@@ -904,9 +1283,6 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
 }
-.expand-content {
-  padding: 12px 20px;
-}
 .column-settings-body {
   padding: 4px 0;
 }
@@ -971,5 +1347,124 @@ onBeforeUnmount(() => {
 }
 .context-menu-item.danger:hover {
   background: #FEF2F2;
+}
+
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.scroll-reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.search-btn.is-loading {
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.import-body {
+  min-height: 200px;
+}
+.import-step {
+  padding: 8px 0;
+}
+.import-upload {
+  width: 100%;
+}
+.import-upload :deep(.el-upload-dragger) {
+  width: 100%;
+  border-radius: 12px;
+  border: 2px dashed #CBD5E1;
+  transition: border-color 0.2s;
+}
+.import-upload :deep(.el-upload-dragger:hover) {
+  border-color: #2563EB;
+}
+.import-preview-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #334155;
+}
+.import-unmatched {
+  color: #F59E0B;
+  font-size: 12px;
+}
+.import-preview-table-wrapper {
+  border-radius: 8px;
+  overflow: hidden;
+}
+.import-preview-more {
+  text-align: center;
+  font-size: 12px;
+  color: #94A3B8;
+  padding: 8px 0;
+}
+.import-result {
+  padding: 16px 0;
+}
+.import-result-detail {
+  font-size: 14px;
+  color: #475569;
+  line-height: 2;
+}
+.import-result-detail p {
+  margin: 0;
+}
+.import-result-detail strong {
+  color: #0F172A;
+}
+.import-result-errors {
+  margin-top: 8px;
+  text-align: left;
+}
+.import-result-errors p {
+  font-weight: 600;
+  color: #F59E0B;
+  margin-bottom: 4px;
+}
+.import-result-errors ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+  color: #64748B;
+}
+.import-result-errors li {
+  line-height: 1.8;
 }
 </style>

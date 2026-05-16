@@ -184,6 +184,69 @@ class ProjectViewSet(viewsets.ModelViewSet):
             p.save()
         return Response({'message': '删除成功'}, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['post'], url_path='batch-import')
+    def batch_import(self, request):
+        """批量导入项目数据"""
+        customer_id = request.data.get('customer_id')
+        items = request.data.get('items', [])
+
+        if not customer_id:
+            return Response({'error': '请选择客户'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            customer = Customer.objects.get(id=customer_id)
+        except Customer.DoesNotExist:
+            return Response({'error': '客户不存在'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not items:
+            return Response({'error': '无有效数据'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        errors = []
+
+        for idx, item in enumerate(items):
+            project_name = item.get('project_name', '').strip()
+            if not project_name:
+                skipped_count += 1
+                errors.append(f'第{idx + 1}行：项目名称为空，已跳过')
+                continue
+
+            hardware_version = (item.get('hardware_version') or '').strip()
+            existing = Project.objects.filter(
+                customer=customer, project_name=project_name, hardware_version=hardware_version
+            ).first()
+
+            if existing:
+                overwrite = item.get('_overwrite', False)
+                if overwrite:
+                    for field, value in item.items():
+                        if field in ('project_name', '_overwrite', 'serial_number'):
+                            continue
+                        if hasattr(existing, field):
+                            setattr(existing, field, value)
+                    existing.save()
+                    updated_count += 1
+                else:
+                    skipped_count += 1
+                    errors.append(f'项目名称【{project_name}】已存在，已跳过')
+            else:
+                max_sn = Project.objects.filter(customer=customer).aggregate(
+                    max_sn=Max('serial_number')
+                )['max_sn'] or 0
+                project_data = {k: v for k, v in item.items() if k != '_overwrite'}
+                project_data['customer'] = customer
+                project_data['serial_number'] = max_sn + 1
+                Project.objects.create(**project_data)
+                created_count += 1
+
+        return Response({
+            'created': created_count,
+            'updated': updated_count,
+            'skipped': skipped_count,
+            'errors': errors,
+        })
+
     @action(detail=False, methods=['get'], url_path='filter-options')
     def filter_options(self, request):
         """获取筛选选项，可按客户过滤"""

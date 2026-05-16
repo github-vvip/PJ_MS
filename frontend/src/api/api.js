@@ -75,4 +75,6 @@ export const deleteProject = (id) => api.delete(`/projects/${id}/`)
 
 export const getProjectFilterOptions = (params) => api.get('/projects/filter-options/', { params })
 
+export const batchImportProjects = (data) => api.post('/projects/batch-import/', data)
+
 export default api
